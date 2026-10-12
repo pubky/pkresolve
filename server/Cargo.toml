@@ -1,0 +1,17 @@
+[package]
+name = "server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+publish.workspace = true
+description = "Cached Pubky resolution service"
+
+[dependencies]
+pkresolve.workspace = true
+
+[lints]
+workspace = true
