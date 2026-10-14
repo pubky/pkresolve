@@ -1,23 +1,28 @@
 # PKResolve
 
-Rust workspace for Pubky resolution. See [SPEC.md](docs/SPEC.md) for the design.
-The `pkresolve` core verifies proof bundles and derives endpoint candidates.
-The `client`, `server`, and `reqwest` crates remain stubs; networking is not
-implemented. See [the core README](pkresolve/README.md) for usage and limits.
+Pubky endpoint resolution from signed PKARR packets, with a cached bundle
+service design. See the [specification](docs/SPEC.md) for the protocol.
 
-- `pkresolve`: shared types, verification, and delegation rules.
-- `client`: transport interface, resolution requests, and client cache.
-- `server`: packet fetching, shared cache, and HTTP proof-bundle service.
-- `reqwest`: standalone client transport adapter.
+- [Library](pkresolve/README.md): routing, bundle processing, and client cache.
+- [Server](server/src/lib.rs): PKARR provider; HTTP serving is pending.
+- [Chromium](chromium/README.md): CXX integration prototype.
 
-The `client` and `server` crates depend on `pkresolve`. The `reqwest` adapter
-depends on `client`. The external reqwest HTTP library is not yet included;
-it will use a dependency alias to avoid the local package name collision.
+## Status
 
-All packages are currently unpublished libraries. A server executable can be
-added when startup and configuration are defined.
+Unpublished prototype. PKARR 8.1 needs upstream signature and malformed-input
+validation fixes before the client can safely accept untrusted bundles.
 
-Check the workspace with:
+Known client cache limitations:
+
+- Expired cached packets can still produce terminal errors, such as
+  `NoCompatibleEndpoint` for an absent scoped service. Those errors do not
+  trigger a fresh bundle fetch and can persist until the packet is replaced.
+- Incoming packet versions are not compared with previously accepted versions.
+  A delayed response can return older routes and overwrite newer cached packets.
+
+## Development
+
+From the repository root, with dependencies cached:
 
 ```sh
 cargo fmt --all --check
@@ -25,3 +30,5 @@ cargo check --workspace --offline
 cargo test --workspace --offline
 cargo clippy --workspace --all-targets --offline -- -D warnings
 ```
+
+Chromium has a separate [build guide](chromium/README.md#build-inside-chromium).

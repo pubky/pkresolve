@@ -1,0 +1,36 @@
+# Place this repository at //third_party/pkresolve. Vendor the Rust dependencies
+# listed in README.md with gnrt before adding this target.
+import("//build/rust/rust_static_library.gni")
+
+rust_static_library("pkresolve") {
+  crate_name = "pkresolve"
+  crate_root = "../pkresolve/src/lib.rs"
+  edition = "2024"
+  sources = [
+    "../pkresolve/src/client.rs",
+    "../pkresolve/src/error.rs",
+    "../pkresolve/src/lib.rs",
+    "../pkresolve/src/name.rs",
+    "../pkresolve/src/provider.rs",
+    "../pkresolve/src/resolution.rs",
+  ]
+  deps = [
+    "//third_party/rust/base64/v0_22:lib",
+    "//third_party/rust/futures_lite/v2:lib",
+    "//third_party/rust/pkarr/v8:lib",
+    "//third_party/rust/serde/v1:lib",
+    "//third_party/rust/serde_json/v1:lib",
+    "//third_party/rust/thiserror/v2:lib",
+  ]
+}
+
+rust_static_library("bridge") {
+  # CXX generates unsafe Rust glue for the C++ boundary.
+  allow_unsafe = true
+  crate_name = "pkresolve_chromium"
+  crate_root = "src/lib.rs"
+  edition = "2024"
+  sources = [ "src/lib.rs" ]
+  cxx_bindings = [ "src/lib.rs" ]
+  deps = [ ":pkresolve" ]
+}

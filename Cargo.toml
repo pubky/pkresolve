@@ -1,9 +1,7 @@
 [workspace]
 members = [
     "pkresolve",
-    "client",
     "server",
-    "reqwest",
 ]
 resolver = "3"
 
@@ -20,7 +18,6 @@ publish = false
 
 [workspace.dependencies]
 pkresolve = { path = "pkresolve" }
-client = { path = "client" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

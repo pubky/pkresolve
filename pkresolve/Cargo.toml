@@ -11,11 +11,12 @@ publish.workspace = true
 description.workspace = true
 
 [dependencies]
-pkarr = { version = "8.1", default-features = false, features = ["signed_packet"] }
-thiserror = "2"
-
-[dev-dependencies]
+base64 = "0.22"
 futures-lite = "2"
+pkarr = { version = "8.1", default-features = false, features = ["signed_packet"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
 
 [lints]
 workspace = true
