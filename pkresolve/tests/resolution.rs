@@ -278,7 +278,8 @@ fn future_observation_times_do_not_need_a_clock_skew_policy() {
     for seconds in [5, 6] {
         let mut packet = proof(direct_builder(), &alice, 0, 0);
         packet.set_last_seen(&(now() + Duration::from_secs(seconds)).into());
-        assert!(resolve(&request(&alice), &[packet]).is_ok());
+        let result = resolve(&request(&alice), &[packet]).unwrap();
+        assert_remaining_ttl(&result, u64::from(TTL));
         let signed = direct_builder()
             .timestamp((now() + Duration::from_secs(seconds)).into())
             .sign(&alice)
@@ -488,6 +489,49 @@ fn hints_supply_routes_without_granting_tls_authority() {
         result.candidates[0].addresses.as_slice(),
         &["203.0.113.10".parse::<IpAddr>().unwrap()]
     );
+}
+
+#[test]
+fn unaddressable_candidates_do_not_suppress_hinted_routes() {
+    let alice = key(1);
+    let hinted_ip: std::net::Ipv4Addr = "203.0.113.10".parse().unwrap();
+    let mut hinted = route(2, 8443);
+    hinted.set_ipv4hint(&[hinted_ip.into()]);
+    let unaddressable = route(1, 443);
+
+    for services in [
+        [unaddressable.clone(), hinted.clone()],
+        [hinted.clone(), unaddressable.clone()],
+    ] {
+        let mut builder = SignedPacket::builder();
+        for svc in services {
+            builder = builder.https(name("."), svc, TTL);
+        }
+        let packet = proof(builder, &alice, 0, 0);
+        let result = resolve(&request(&alice), &[packet]).unwrap();
+        assert_eq!(result.candidates.len(), 1);
+        let candidate = &result.candidates[0];
+        assert_eq!(candidate.addresses, vec![IpAddr::V4(hinted_ip)]);
+        assert_eq!(candidate.port.get(), 8443);
+        assert_eq!(candidate.priority, 2);
+    }
+}
+
+#[test]
+fn no_addresses_is_returned_when_all_compatible_candidates_lack_addresses() {
+    let alice = key(1);
+    let packet = proof(
+        SignedPacket::builder()
+            .https(name("."), route(1, 443), TTL)
+            .https(name("."), route(2, 8443), TTL),
+        &alice,
+        0,
+        0,
+    );
+    assert!(matches!(
+        resolve(&request(&alice), &[packet]),
+        Err(Error::NoAddresses)
+    ));
 }
 
 #[test]

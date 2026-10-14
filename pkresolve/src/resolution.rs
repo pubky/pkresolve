@@ -129,11 +129,18 @@ pub async fn derive_resolution(
     if services.is_empty() {
         return Err(Error::NoCompatibleEndpoint);
     }
-    if packet.ttl(0, u32::MAX) == 0 {
+    let ttl = packet.ttl(0, u32::MAX);
+    if ttl == 0 {
         return Err(Error::Unsupported("zero TTL"));
     }
     let now = Instant::now();
-    let remaining = Duration::from_secs(u64::from(packet.expires_in(0, u32::MAX)));
+    // PKARR 8.1's expires_in() underflows for future observations. Treat clock
+    // skew as age zero, without extending reuse beyond the packet's TTL.
+    let observed_age_seconds = pkarr::Timestamp::now()
+        .as_u64()
+        .saturating_sub(packet.last_seen().as_u64())
+        / 1_000_000;
+    let remaining = Duration::from_secs(u64::from(ttl).saturating_sub(observed_age_seconds));
     let expires_at = now
         .checked_add(remaining)
         .ok_or(Error::InvalidTime("cache deadline overflow"))?;
@@ -144,19 +151,25 @@ pub async fn derive_resolution(
         {
             return Err(Error::Unsupported("alternate HTTPS target"));
         }
-        let addresses = addresses(&records, service)?;
         let port = match service.get_param(3) {
             Some(SVCParam::Port(port)) => {
                 NonZeroU16::new(*port).ok_or(Error::InvalidRecord("port zero"))?
             }
             _ => request.url_port,
         };
+        let addresses = addresses(&records, service);
+        if addresses.is_empty() {
+            continue;
+        }
         candidates.push(EndpointCandidate {
             addresses,
             port,
             priority: service.priority,
             protocols,
         });
+    }
+    if candidates.is_empty() {
+        return Err(Error::NoAddresses);
     }
     candidates.sort_by_key(|candidate| candidate.priority);
     // Evidence must still be fresh when the resolution is returned.
@@ -301,7 +314,7 @@ fn compatible_protocols(
         .collect())
 }
 
-fn addresses(records: &[&ResourceRecord<'_>], service: &SVCB<'_>) -> Result<Vec<IpAddr>, Error> {
+fn addresses(records: &[&ResourceRecord<'_>], service: &SVCB<'_>) -> Vec<IpAddr> {
     let mut result: Vec<_> = records
         .iter()
         .filter_map(|record| match &record.rdata {
@@ -321,8 +334,5 @@ fn addresses(records: &[&ResourceRecord<'_>], service: &SVCB<'_>) -> Result<Vec<
     }
     let mut seen = HashSet::new();
     result.retain(|address| seen.insert(*address));
-    if result.is_empty() {
-        return Err(Error::NoAddresses);
-    }
-    Ok(result)
+    result
 }

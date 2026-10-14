@@ -40,7 +40,7 @@ pub enum Error {
     /// No compatible ServiceMode record was found. No address fallback applies.
     #[error("no compatible endpoint")]
     NoCompatibleEndpoint,
-    /// A compatible service has no usable signed addresses or address hints.
+    /// No compatible service has usable signed addresses or address hints.
     #[error("no addresses")]
     NoAddresses,
 }
