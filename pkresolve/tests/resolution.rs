@@ -146,8 +146,9 @@ fn all_endpoint_ports_use_destination_key_and_ignore_tls_delegation() {
         assert_eq!(result.service.public_key(), &alice.public_key());
         assert_eq!(candidates[1].port.get(), 8443);
         assert_eq!(&result.service, &service(&alice));
-        // Ignored TLS delegation records do not shorten routing lifetimes.
-        assert_remaining_ttl(&result, 280);
+        // TLS delegation does not change the destination key, but its record
+        // still contributes to the whole packet's shortest TTL: 120 - 20.
+        assert_remaining_ttl(&result, 100);
     }
 }
 
