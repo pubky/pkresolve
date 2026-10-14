@@ -1,7 +1,9 @@
 # PKResolve
 
 Rust workspace for Pubky resolution. See [SPEC.md](docs/SPEC.md) for the design.
-The crates are stubs; networking and proof verification are not implemented.
+The `pkresolve` core verifies proof bundles and derives endpoint candidates.
+The `client`, `server`, and `reqwest` crates remain stubs; networking is not
+implemented. See [the core README](pkresolve/README.md) for usage and limits.
 
 - `pkresolve`: shared types, verification, and delegation rules.
 - `client`: transport interface, resolution requests, and client cache.
@@ -20,5 +22,6 @@ Check the workspace with:
 ```sh
 cargo fmt --all --check
 cargo check --workspace --offline
+cargo test --workspace --offline
 cargo clippy --workspace --all-targets --offline -- -D warnings
 ```

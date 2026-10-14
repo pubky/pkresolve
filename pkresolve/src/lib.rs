@@ -1,7 +1,26 @@
-//! Shared types and protocol rules for Pubky resolution.
+//! Pubky routing and direct raw-key TLS with pluggable packet sources.
 //!
-//! Planned responsibilities include signed packet verification, routing and
-//! TLS delegation, and endpoint candidate derivation. This crate will remain
-//! independent of HTTP transports and async runtimes.
+//! Call [`derive_resolution`] (also exported as [`resolve`]) with a
+//! [`PacketProvider`] backed by PKARR, a local cache, or a response bundle.
+//! Missing evidence is never a negative answer.
+//! The host authenticates every candidate with `Resolution::service.public_key()`
+//! and uses that service name as TLS SNI.
 //!
-//! This is a workspace stub; resolution and verification are not implemented.
+//! Supports same-name HTTPS ServiceMode records and direct raw-key TLS using
+//! the destination Pubky key. TLS delegation records are ignored. HTTPS aliases,
+//! routing CNAMEs, alternate targets, CA TLS, certificates, ECH, and HTTP/3 are
+//! not implemented.
+
+mod error;
+mod name;
+mod provider;
+mod resolution;
+
+pub use error::Error;
+pub use name::ServiceName;
+pub use pkarr::{PublicKey, SignedPacket};
+pub use provider::PacketProvider;
+pub use resolution::derive_resolution as resolve;
+pub use resolution::{
+    EndpointCandidate, HttpProtocol, Resolution, ResolutionRequest, derive_resolution,
+};
