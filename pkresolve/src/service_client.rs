@@ -1,7 +1,9 @@
 //! Cache-first resolution and the non-streaming PKResolve service protocol.
 //!
-//! Call [`Client::prepare`], fetch a bundle when needed, then call
-//! [`Client::accept_bundle`]. The client owns protocol handling and caching.
+//! Available with the `service-client` feature.
+//!
+//! Call [`ServiceClient::prepare`], fetch a bundle when needed, then call
+//! [`ServiceClient::accept_bundle`]. The client owns protocol handling and caching.
 //! Packet validation belongs to PKARR's native `SignedPacket::deserialize()`.
 //! The current PKARR decoder still needs upstream fixes before untrusted
 //! service responses can be accepted safely.
@@ -37,6 +39,7 @@ pub enum Error {
 }
 
 /// Result of checking the local cache for an original request.
+#[derive(Debug)]
 pub enum Preparation {
     /// Fresh endpoints are available without contacting the service.
     Ready(Resolution),
@@ -47,6 +50,7 @@ pub enum Preparation {
 /// A validated original request and its service request body.
 /// Keep this value until the HTTP response arrives; it binds bundle acceptance
 /// to the original service, URL port, and protocol preferences.
+#[derive(Debug)]
 pub struct BundleRequest {
     request: ResolutionRequest,
     body: String,
@@ -60,19 +64,19 @@ impl BundleRequest {
 }
 
 /// Resolution state with a decoded packet cache. Performs no network I/O.
-#[derive(Default)]
-pub struct Client {
+#[derive(Debug, Default)]
+pub struct ServiceClient {
     packets: HashMap<PublicKey, Arc<SignedPacket>>,
 }
 
-impl Client {
+impl ServiceClient {
     /// Resolve from cache or prepare a bundle fetch. Only missing or expired
     /// packets require HTTP; other resolution errors remain terminal.
     ///
     /// # Errors
     /// Propagates request encoding and terminal resolution failures.
     pub fn prepare(&self, request: ResolutionRequest) -> Result<Preparation, Error> {
-        match crate::resolve(&request, &self.packets) {
+        match crate::derive_resolution(&request, &self.packets) {
             Ok(resolution) => Ok(Preparation::Ready(resolution)),
             Err(crate::Error::MissingPacket(_) | crate::Error::ExpiredRecord) => {
                 let body = request_body(&request)?;
@@ -93,15 +97,8 @@ impl Client {
         bundle_request: BundleRequest,
         response: &[u8],
     ) -> Result<Resolution, Error> {
-        let bundle = decode_bundle(response)?;
-        let mut packets = HashMap::with_capacity(bundle.len());
-        for packet in bundle {
-            let key = packet.public_key();
-            if packets.insert(key.clone(), Arc::new(packet)).is_some() {
-                return Err(Error::DuplicatePacket(key.to_string()));
-            }
-        }
-        let resolution = crate::resolve(&bundle_request.request, &packets)?;
+        let packets = decode_bundle(response)?;
+        let resolution = crate::derive_resolution(&bundle_request.request, &packets)?;
         self.packets.extend(packets);
         Ok(resolution)
     }
@@ -125,7 +122,7 @@ fn request_body(request: &ResolutionRequest) -> Result<String, serde_json::Error
     })
 }
 
-fn decode_bundle(response: &[u8]) -> Result<Vec<SignedPacket>, Error> {
+fn decode_bundle(response: &[u8]) -> Result<HashMap<PublicKey, Arc<SignedPacket>>, Error> {
     #[derive(Deserialize)]
     struct Bundle {
         schema: u32,
@@ -135,12 +132,14 @@ fn decode_bundle(response: &[u8]) -> Result<Vec<SignedPacket>, Error> {
     if bundle.schema != 1 {
         return Err(Error::UnsupportedSchema(bundle.schema));
     }
-    bundle
-        .packets
-        .into_iter()
-        .map(|encoded| {
-            let bytes = STANDARD.decode(encoded)?;
-            Ok(SignedPacket::deserialize(&bytes)?)
-        })
-        .collect()
+    let mut packets = HashMap::with_capacity(bundle.packets.len());
+    for encoded in bundle.packets {
+        let bytes = STANDARD.decode(encoded)?;
+        let packet = SignedPacket::deserialize(&bytes)?;
+        let key = packet.public_key();
+        if packets.insert(key.clone(), Arc::new(packet)).is_some() {
+            return Err(Error::DuplicatePacket(key.to_string()));
+        }
+    }
+    Ok(packets)
 }

@@ -14,7 +14,7 @@ use pkarr::dns::{
 
 use crate::{Error, ServiceName, SignedPacket};
 
-use super::{EndpointCandidate, Resolution, ResolutionRequest, https::https_services};
+use super::{EndpointCandidate, Resolution, ResolutionRequest, https_records::https_services};
 
 pub(super) fn resolution_from_packet(
     request: &ResolutionRequest,
@@ -22,6 +22,7 @@ pub(super) fn resolution_from_packet(
     packet: &SignedPacket,
 ) -> Result<Resolution, Error> {
     let records = records(packet, routing_owner.as_str());
+    check_routing_cname(&records)?;
     let services = https_services(&records, request.supported_protocols())?;
     if services.is_empty() {
         return Err(Error::NoCompatibleEndpoint);
@@ -61,6 +62,19 @@ pub(super) fn resolution_from_packet(
         candidates,
         expires_at,
     })
+}
+
+fn check_routing_cname(records: &[&ResourceRecord<'_>]) -> Result<(), Error> {
+    if !records
+        .iter()
+        .any(|record| matches!(record.rdata, RData::CNAME(_)))
+    {
+        return Ok(());
+    }
+    if records.len() != 1 {
+        return Err(Error::InvalidRecord("CNAME with other routing records"));
+    }
+    Err(Error::Unsupported("routing CNAME"))
 }
 
 /// Convert the shortest record TTL into a monotonic deadline, preserving age.

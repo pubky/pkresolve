@@ -6,18 +6,19 @@ rust_static_library("pkresolve") {
   crate_name = "pkresolve"
   crate_root = "../pkresolve/src/lib.rs"
   edition = "2024"
+  features = [ "service-client" ]
   sources = [
-    "../pkresolve/src/client.rs",
     "../pkresolve/src/error.rs",
     "../pkresolve/src/lib.rs",
-    "../pkresolve/src/name.rs",
     "../pkresolve/src/provider.rs",
-    "../pkresolve/src/resolution/drivers.rs",
-    "../pkresolve/src/resolution/https.rs",
+    "../pkresolve/src/resolution/https_records.rs",
     "../pkresolve/src/resolution/mod.rs",
+    "../pkresolve/src/resolution/resolve.rs",
     "../pkresolve/src/resolution/routing.rs",
     "../pkresolve/src/resolution/traversal.rs",
     "../pkresolve/src/resolution/types.rs",
+    "../pkresolve/src/service_client.rs",
+    "../pkresolve/src/service_name.rs",
   ]
   deps = [
     "//third_party/rust/base64/v0_22:lib",

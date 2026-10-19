@@ -13,7 +13,6 @@ pub(super) fn https_services<'a>(
     records: &[&'a ResourceRecord<'a>],
     supported_protocols: &[HttpProtocol],
 ) -> Result<Vec<(&'a SVCB<'a>, Vec<HttpProtocol>)>, Error> {
-    check_routing_cname(records)?;
     // AliasMode overrides ServiceMode before protocol filtering.
     check_https_aliases(records)?;
     let mut services = Vec::new();
@@ -46,19 +45,6 @@ fn check_https_aliases(records: &[&ResourceRecord<'_>]) -> Result<(), Error> {
         return Err(Error::ServiceUnavailable);
     }
     Err(Error::Unsupported("HTTPS AliasMode"))
-}
-
-fn check_routing_cname(records: &[&ResourceRecord<'_>]) -> Result<(), Error> {
-    if !records
-        .iter()
-        .any(|record| matches!(record.rdata, RData::CNAME(_)))
-    {
-        return Ok(());
-    }
-    if records.len() != 1 {
-        return Err(Error::InvalidRecord("CNAME with other routing records"));
-    }
-    Err(Error::Unsupported("routing CNAME"))
 }
 
 fn compatible_protocols(

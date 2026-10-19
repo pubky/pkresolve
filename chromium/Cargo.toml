@@ -12,7 +12,7 @@ publish = false
 crate-type = ["rlib", "staticlib"]
 
 [dependencies]
-pkresolve = { path = "../pkresolve" }
+pkresolve = { path = "../pkresolve", features = ["service-client"] }
 cxx = "=1.0.194"
 
 # Chromium supplies its own CXX version and builds this source through GN.

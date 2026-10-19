@@ -3,7 +3,10 @@
 
 use std::time::Instant;
 
-use pkresolve::{Error, ResolutionRequest, client};
+use pkresolve::{
+    Error, ResolutionRequest, ServiceClient,
+    service_client::{Error as ServiceError, Preparation as ServicePreparation},
+};
 
 #[cxx::bridge(namespace = "pkresolve")]
 pub mod ffi {
@@ -75,7 +78,7 @@ pub mod ffi {
 /// Packet cache and protocol operations for one Chromium sequence.
 #[derive(Default)]
 pub struct Client {
-    inner: pkresolve::Client,
+    inner: ServiceClient,
 }
 
 /// Create empty resolution state. No HTTP client or runtime is needed.
@@ -85,19 +88,19 @@ pub fn new_client() -> Box<Client> {
 
 /// Cached result, error, or retained original request for an HTTP fetch.
 pub struct Preparation {
-    result: Result<client::Preparation, client::Error>,
+    result: Result<ServicePreparation, ServiceError>,
 }
 
 impl Preparation {
     /// Whether Chromium must POST the service request body.
     pub fn needs_bundle(&self) -> bool {
-        matches!(self.result, Ok(client::Preparation::Fetch(_)))
+        matches!(self.result, Ok(ServicePreparation::Fetch(_)))
     }
 
     /// Borrow the JSON body for a fetch; copy it before asynchronous HTTP.
     pub fn request_body(&self) -> &str {
         match &self.result {
-            Ok(client::Preparation::Fetch(bundle_request)) => bundle_request.body(),
+            Ok(ServicePreparation::Fetch(bundle_request)) => bundle_request.body(),
             _ => "",
         }
     }
@@ -113,7 +116,7 @@ impl Client {
     ) -> Box<Preparation> {
         Box::new(Preparation {
             result: parse_request(service, url_port, protocols)
-                .map_err(client::Error::from)
+                .map_err(ServiceError::from)
                 .and_then(|request| self.inner.prepare(request)),
         })
     }
@@ -126,7 +129,7 @@ impl Client {
         response: &[u8],
     ) -> ffi::ResolveResponse {
         match preparation.result {
-            Ok(client::Preparation::Fetch(bundle_request)) => {
+            Ok(ServicePreparation::Fetch(bundle_request)) => {
                 into_response(self.inner.accept_bundle(bundle_request, response))
             }
             _ => failure(
@@ -140,15 +143,15 @@ impl Client {
 /// Consume a cache hit or terminal error without performing HTTP.
 pub fn prepared_result(preparation: Box<Preparation>) -> ffi::ResolveResponse {
     match preparation.result {
-        Ok(client::Preparation::Ready(resolution)) => into_response(Ok(resolution)),
+        Ok(ServicePreparation::Ready(resolution)) => into_response(Ok(resolution)),
         Err(error) => into_response(Err(error)),
-        Ok(client::Preparation::Fetch(_)) => {
+        Ok(ServicePreparation::Fetch(_)) => {
             failure(ffi::StatusCode::InvalidInput, "bundle required".into())
         }
     }
 }
 
-fn into_response(result: Result<pkresolve::Resolution, client::Error>) -> ffi::ResolveResponse {
+fn into_response(result: Result<pkresolve::Resolution, ServiceError>) -> ffi::ResolveResponse {
     match result {
         Ok(resolution) => ffi::ResolveResponse {
             status: ffi::Status {
@@ -184,17 +187,17 @@ fn failure(code: ffi::StatusCode, message: String) -> ffi::ResolveResponse {
     }
 }
 
-fn error_response(error: client::Error) -> ffi::ResolveResponse {
+fn error_response(error: ServiceError) -> ffi::ResolveResponse {
     let code = match &error {
-        client::Error::Resolution(Error::InvalidServiceName(_) | Error::InvalidRequest(_)) => {
+        ServiceError::Resolution(Error::InvalidServiceName(_) | Error::InvalidRequest(_)) => {
             ffi::StatusCode::InvalidInput
         }
-        client::Error::Resolution(Error::Unsupported(_)) => ffi::StatusCode::Unsupported,
-        client::Error::Resolution(Error::ServiceUnavailable) => ffi::StatusCode::ServiceUnavailable,
-        client::Error::Resolution(Error::NoCompatibleEndpoint) => {
+        ServiceError::Resolution(Error::Unsupported(_)) => ffi::StatusCode::Unsupported,
+        ServiceError::Resolution(Error::ServiceUnavailable) => ffi::StatusCode::ServiceUnavailable,
+        ServiceError::Resolution(Error::NoCompatibleEndpoint) => {
             ffi::StatusCode::NoCompatibleEndpoint
         }
-        client::Error::Resolution(Error::NoAddresses) => ffi::StatusCode::NoAddresses,
+        ServiceError::Resolution(Error::NoAddresses) => ffi::StatusCode::NoAddresses,
         _ => ffi::StatusCode::InvalidBundle,
     };
     failure(code, error.to_string())

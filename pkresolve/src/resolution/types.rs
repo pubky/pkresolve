@@ -107,3 +107,23 @@ pub struct Resolution {
     /// The complete result may be reused until this time.
     pub expires_at: Instant,
 }
+
+#[cfg(test)]
+mod tests {
+    use pkarr::Keypair;
+
+    use super::*;
+
+    #[test]
+    fn request_rejects_zero_port_and_empty_protocols() {
+        let service: ServiceName = Keypair::from_secret_key(&[1; 32]).to_z32().parse().unwrap();
+        assert!(matches!(
+            ResolutionRequest::new(service.clone(), 0, vec![HttpProtocol::Http11]),
+            Err(Error::InvalidRequest(_))
+        ));
+        assert!(matches!(
+            ResolutionRequest::new(service, 443, vec![]),
+            Err(Error::InvalidRequest(_))
+        ));
+    }
+}

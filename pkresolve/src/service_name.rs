@@ -64,3 +64,21 @@ impl fmt::Display for ServiceName {
         f.write_str(&self.name)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use pkarr::Keypair;
+
+    use super::*;
+
+    #[test]
+    fn validation_preserves_scopes_and_rejects_urls_and_wildcards() {
+        let key = Keypair::from_secret_key(&[1; 32]).to_z32();
+        let upper = format!("APP.{}.", key.to_ascii_uppercase());
+        let parsed: ServiceName = upper.parse().unwrap();
+        assert_eq!(parsed.as_str(), format!("app.{key}"));
+        for prefix in ["https://", "*.", ".", "-app.", "app..", "é."] {
+            assert!(format!("{prefix}{key}").parse::<ServiceName>().is_err());
+        }
+    }
+}

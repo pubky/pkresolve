@@ -1,6 +1,12 @@
 # pkresolve
 
-`pkresolve::Client` owns the packet cache and bundle processing.
+Enable the optional `service-client` feature to use `pkresolve::ServiceClient`
+for packet caching and bundle processing. It is disabled by default:
+
+```toml
+pkresolve = { path = "../pkresolve", features = ["service-client"] }
+```
+
 Call `prepare(request)` to obtain cached endpoints or a `BundleRequest`.
 Send its JSON body to `/v1/resolve` using your HTTP stack, then pass the retained
 request and response bytes to `accept_bundle()`. Failed bundles leave the cache
@@ -27,10 +33,9 @@ let resolution =
     pkresolve::derive_resolution_async(&request, &async_provider).await?;
 ```
 
-Both entry points share routing and freshness checks. `resolve` and
-`resolve_async` are their respective aliases. The synchronous entry point needs
-no executor. The async entry point awaits each packet lookup; dropping its
-future drops the pending lookup. Providers own I/O timeouts.
+Both entry points share routing and freshness checks. The synchronous entry
+point needs no executor. The async entry point awaits each packet lookup;
+dropping its future drops the pending lookup. Providers own I/O timeouts.
 
 Supports same-name HTTPS ServiceMode, multiple endpoints, signed addresses and
 hints, HTTP/1.1, and HTTP/2. Aliases and TLS delegation are deferred. See the

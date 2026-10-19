@@ -543,23 +543,6 @@ fn no_addresses_is_returned_when_all_compatible_candidates_lack_addresses() {
 }
 
 #[test]
-fn service_name_validation_preserves_scopes_and_rejects_urls_and_wildcards() {
-    let alice = key(1);
-    let upper = format!("APP.{}.", alice.to_z32().to_ascii_uppercase());
-    let parsed: ServiceName = upper.parse().unwrap();
-    assert_eq!(parsed.as_str(), format!("app.{}", alice.to_z32()));
-    for prefix in ["https://", "*.", ".", "-app.", "app..", "é."] {
-        assert!(
-            format!("{prefix}{}", alice.to_z32())
-                .parse::<ServiceName>()
-                .is_err()
-        );
-    }
-    assert!(ResolutionRequest::new(service(&alice), 0, vec![HttpProtocol::Http11]).is_err());
-    assert!(ResolutionRequest::new(service(&alice), 443, vec![]).is_err());
-}
-
-#[test]
 fn publication_timestamp_does_not_affect_record_ttl() {
     let alice = key(1);
     let signed = direct_builder()

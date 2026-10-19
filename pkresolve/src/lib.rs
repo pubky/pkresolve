@@ -1,12 +1,13 @@
 //! Pubky routing and direct raw-key TLS with pluggable packet sources.
 //!
-//! Use [`Client`] for cache-first resolution and whole-bundle processing.
+//! Enable `service-client` to use `ServiceClient` for cache-first resolution
+//! and whole-bundle processing. This feature is disabled by default.
 //! The caller supplies HTTP; the library performs no network I/O.
 //!
-//! Call [`derive_resolution`] (also exported as [`resolve`]) with a
+//! Call [`derive_resolution`] with a
 //! [`PacketProvider`] backed by PKARR, a local cache, or a response bundle.
-//! For asynchronous packet sources, use [`derive_resolution_async`] (also
-//! exported as [`resolve_async`]) with an [`AsyncPacketProvider`].
+//! For asynchronous packet sources, use [`derive_resolution_async`] with an
+//! [`AsyncPacketProvider`].
 //! Missing evidence is never a negative answer.
 //! The host authenticates every candidate with `Resolution::service.public_key()`
 //! and uses that service name as TLS SNI.
@@ -16,20 +17,21 @@
 //! routing CNAMEs, alternate targets, CA TLS, certificates, ECH, and HTTP/3 are
 //! not implemented.
 
-pub mod client;
 mod error;
-mod name;
 mod provider;
 mod resolution;
+#[cfg(feature = "service-client")]
+pub mod service_client;
+mod service_name;
 
-pub use client::Client;
 pub use error::Error;
-pub use name::ServiceName;
 pub use pkarr::{PublicKey, SignedPacket};
 pub use provider::{AsyncPacketProvider, PacketProvider};
-pub use resolution::derive_resolution as resolve;
-pub use resolution::derive_resolution_async as resolve_async;
 pub use resolution::{
     EndpointCandidate, HttpProtocol, Resolution, ResolutionRequest, derive_resolution,
     derive_resolution_async,
 };
+pub use service_name::ServiceName;
+
+#[cfg(feature = "service-client")]
+pub use service_client::ServiceClient;

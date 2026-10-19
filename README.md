@@ -28,7 +28,8 @@ From the repository root, with dependencies cached:
 cargo fmt --all --check
 cargo check --workspace --offline
 cargo test --workspace --offline
-cargo clippy --workspace --all-targets --offline -- -D warnings
+cargo test --workspace --all-features --offline
+cargo clippy --workspace --all-targets --all-features --offline -- -D warnings
 ```
 
 Chromium has a separate [build guide](chromium/README.md#build-inside-chromium).
