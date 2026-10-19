@@ -15,8 +15,7 @@ use pkarr::{
     },
 };
 use pkresolve::{
-    Error, HttpProtocol, PublicKey, Resolution, ResolutionRequest, ServiceName,
-    derive_resolution as derive_from_provider,
+    Error, HttpProtocol, PublicKey, Resolution, ResolutionRequest, ServiceName, derive_resolution,
 };
 
 const TTL: u32 = 300;
@@ -71,13 +70,6 @@ fn packet_cache(packets: &[SignedPacket]) -> HashMap<PublicKey, Arc<SignedPacket
         .map(|packet| (packet.public_key(), Arc::new(packet.clone())))
         .collect()
 }
-fn derive_resolution(
-    req: &ResolutionRequest,
-    packets: &HashMap<PublicKey, Arc<SignedPacket>>,
-) -> Result<Resolution, Error> {
-    futures_lite::future::block_on(derive_from_provider(req, packets))
-}
-
 fn assert_remaining_ttl(resolution: &Resolution, expected_seconds: u64) {
     let remaining = resolution
         .expires_at
@@ -97,6 +89,22 @@ fn resolve(req: &ResolutionRequest, proofs: &[SignedPacket]) -> Result<Resolutio
 
 fn tls_owner(port: u16, key: &Keypair) -> String {
     format!("_{port}._tcp.{}", key.to_z32())
+}
+
+#[test]
+fn fractional_packet_age_does_not_extend_reuse_deadline() {
+    let alice = key(1);
+    let mut packet = proof(direct_builder(), &alice, 0, 0);
+    let observed_age = Duration::from_millis(1500);
+    packet.set_last_seen(&(now() - observed_age).into());
+
+    let result = resolve(&request(&alice), &[packet]).unwrap();
+    let remaining = result.expires_at.saturating_duration_since(Instant::now());
+    let maximum_remaining = Duration::from_secs(u64::from(TTL)) - observed_age;
+    assert!(
+        remaining <= maximum_remaining,
+        "rounding packet age extended its TTL: {remaining:?} > {maximum_remaining:?}"
+    );
 }
 
 #[test]

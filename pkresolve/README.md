@@ -12,12 +12,25 @@ Derive Pubky endpoints from a `PacketProvider`, without an HTTP stack or async
 runtime:
 
 ```rust
-let resolution = pkresolve::resolve(&request, &provider).await?;
+let resolution = pkresolve::derive_resolution(&request, &provider)?;
 ```
 
 Providers supply valid `Arc<SignedPacket>` values and own validation, caching,
 and proof collection. Each key must return the same packet version throughout
 one resolution. A `HashMap<PublicKey, Arc<SignedPacket>>` implements the trait.
+
+For asynchronous packet retrieval, implement `AsyncPacketProvider` and await
+the asynchronous entry point:
+
+```rust
+let resolution =
+    pkresolve::derive_resolution_async(&request, &async_provider).await?;
+```
+
+Both entry points share routing and freshness checks. `resolve` and
+`resolve_async` are their respective aliases. The synchronous entry point needs
+no executor. The async entry point awaits each packet lookup; dropping its
+future drops the pending lookup. Providers own I/O timeouts.
 
 Supports same-name HTTPS ServiceMode, multiple endpoints, signed addresses and
 hints, HTTP/1.1, and HTTP/2. Aliases and TLS delegation are deferred. See the

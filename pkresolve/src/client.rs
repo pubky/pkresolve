@@ -72,8 +72,7 @@ impl Client {
     /// # Errors
     /// Propagates request encoding and terminal resolution failures.
     pub fn prepare(&self, request: ResolutionRequest) -> Result<Preparation, Error> {
-        // The concrete map provider is immediately ready and performs no I/O.
-        match futures_lite::future::block_on(crate::resolve(&request, &self.packets)) {
+        match crate::resolve(&request, &self.packets) {
             Ok(resolution) => Ok(Preparation::Ready(resolution)),
             Err(crate::Error::MissingPacket(_) | crate::Error::ExpiredRecord) => {
                 let body = request_body(&request)?;
@@ -102,8 +101,7 @@ impl Client {
                 return Err(Error::DuplicatePacket(key.to_string()));
             }
         }
-        let resolution =
-            futures_lite::future::block_on(crate::resolve(&bundle_request.request, &packets))?;
+        let resolution = crate::resolve(&bundle_request.request, &packets)?;
         self.packets.extend(packets);
         Ok(resolution)
     }

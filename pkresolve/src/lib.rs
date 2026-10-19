@@ -5,6 +5,8 @@
 //!
 //! Call [`derive_resolution`] (also exported as [`resolve`]) with a
 //! [`PacketProvider`] backed by PKARR, a local cache, or a response bundle.
+//! For asynchronous packet sources, use [`derive_resolution_async`] (also
+//! exported as [`resolve_async`]) with an [`AsyncPacketProvider`].
 //! Missing evidence is never a negative answer.
 //! The host authenticates every candidate with `Resolution::service.public_key()`
 //! and uses that service name as TLS SNI.
@@ -24,8 +26,10 @@ pub use client::Client;
 pub use error::Error;
 pub use name::ServiceName;
 pub use pkarr::{PublicKey, SignedPacket};
-pub use provider::PacketProvider;
+pub use provider::{AsyncPacketProvider, PacketProvider};
 pub use resolution::derive_resolution as resolve;
+pub use resolution::derive_resolution_async as resolve_async;
 pub use resolution::{
     EndpointCandidate, HttpProtocol, Resolution, ResolutionRequest, derive_resolution,
+    derive_resolution_async,
 };

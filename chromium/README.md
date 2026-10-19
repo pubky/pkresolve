@@ -46,7 +46,6 @@ untrusted bundles.
    base64 = "0.22"
    serde = { version = "1", features = ["derive"] }
    serde_json = "1"
-   futures-lite = "2"
 
    [dependencies.pkarr]
    version = "8.1"

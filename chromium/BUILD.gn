@@ -12,11 +12,15 @@ rust_static_library("pkresolve") {
     "../pkresolve/src/lib.rs",
     "../pkresolve/src/name.rs",
     "../pkresolve/src/provider.rs",
-    "../pkresolve/src/resolution.rs",
+    "../pkresolve/src/resolution/drivers.rs",
+    "../pkresolve/src/resolution/https.rs",
+    "../pkresolve/src/resolution/mod.rs",
+    "../pkresolve/src/resolution/routing.rs",
+    "../pkresolve/src/resolution/traversal.rs",
+    "../pkresolve/src/resolution/types.rs",
   ]
   deps = [
     "//third_party/rust/base64/v0_22:lib",
-    "//third_party/rust/futures_lite/v2:lib",
     "//third_party/rust/pkarr/v8:lib",
     "//third_party/rust/serde/v1:lib",
     "//third_party/rust/serde_json/v1:lib",

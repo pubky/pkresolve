@@ -13,7 +13,10 @@ use std::{
 
 use futures_lite::future::{block_on, poll_once};
 use pkarr::{Keypair, SignedPacket, SignedPacketBuilder, dns::rdata::SVCB};
-use pkresolve::{Error, HttpProtocol, PacketProvider, PublicKey, ResolutionRequest, resolve};
+use pkresolve::{
+    AsyncPacketProvider, Error, HttpProtocol, PacketProvider, PublicKey, ResolutionRequest,
+    resolve, resolve_async,
+};
 
 fn now() -> SystemTime {
     SystemTime::now()
@@ -106,12 +109,15 @@ impl Drop for DropFlag<'_> {
         self.0.store(true, Ordering::SeqCst);
     }
 }
-impl PacketProvider for TestProvider {
+impl AsyncPacketProvider for TestProvider {
     type Error = io::Error;
     async fn get_packet(&self, key: &PublicKey) -> Result<Option<Arc<SignedPacket>>, io::Error> {
         self.requests.lock().unwrap().push(key.clone());
         match self.replies.get(key) {
-            Some(Reply::Packet(proof)) => Ok(Some(proof.clone())),
+            Some(Reply::Packet(proof)) => {
+                futures_lite::future::yield_now().await;
+                Ok(Some(proof.clone()))
+            }
             Some(Reply::Failed) => Err(io::Error::new(io::ErrorKind::TimedOut, "source timed out")),
             Some(Reply::Pending) => {
                 let _guard = DropFlag(&self.cancelled);
@@ -128,7 +134,7 @@ fn resolution_only_queries_the_destination_packet() {
     let provider = key(2);
     let proofs = delegated(&alice, &provider);
     let source = TestProvider::new(&proofs);
-    let result = block_on(resolve(&request(&alice), &source)).unwrap();
+    let result = block_on(resolve_async(&request(&alice), &source)).unwrap();
     assert_eq!(source.requested(), vec![alice.public_key()]);
     assert_eq!(result.candidates.len(), 2);
     assert_eq!(result.service.public_key(), &alice.public_key());
@@ -141,11 +147,11 @@ fn response_bundle_uses_the_same_resolution_path_without_network_fallback() {
     let provider = key(2);
     let proofs = delegated(&alice, &provider);
     let bundle = packet_cache(proofs.clone());
-    let result = block_on(resolve(&request(&alice), &bundle)).unwrap();
+    let result = resolve(&request(&alice), &bundle).unwrap();
     assert_eq!(result.candidates.len(), 2);
     // Delegation targets are not required for direct destination-key TLS.
     let destination_only = packet_cache(proofs[..1].to_vec());
-    assert!(block_on(resolve(&request(&alice), &destination_only)).is_ok());
+    assert!(resolve(&request(&alice), &destination_only).is_ok());
 }
 
 #[test]
@@ -153,7 +159,7 @@ fn missing_destination_packet_is_an_error() {
     let alice = key(1);
     let source = TestProvider::new(&[]);
     assert!(matches!(
-        block_on(resolve(&request(&alice), &source)),
+        block_on(resolve_async(&request(&alice), &source)),
         Err(Error::MissingPacket(_))
     ));
     assert_eq!(source.requested().len(), 1);
@@ -169,7 +175,7 @@ fn resolver_does_not_repeat_provider_packet_validation() {
     // This deliberately violates the provider contract to confirm that the
     // resolver interprets supplied packets rather than rechecking signatures.
     let source = TestProvider::new(&proofs);
-    assert!(block_on(resolve(&request(&alice), &source)).is_ok());
+    assert!(block_on(resolve_async(&request(&alice), &source)).is_ok());
 }
 
 #[test]
@@ -177,7 +183,7 @@ fn provider_error_keeps_its_underlying_failure() {
     let alice = key(1);
     let mut source = TestProvider::new(&[]);
     source.replies.insert(alice.public_key(), Reply::Failed);
-    let error = block_on(resolve(&request(&alice), &source)).unwrap_err();
+    let error = block_on(resolve_async(&request(&alice), &source)).unwrap_err();
     let Error::Provider { key, source } = error else {
         panic!("expected provider error");
     };
@@ -189,6 +195,55 @@ fn provider_error_keeps_its_underlying_failure() {
 }
 
 #[test]
+fn synchronous_provider_needs_no_sync_bound_and_preserves_errors() {
+    struct FailingProvider {
+        requests: std::cell::RefCell<Vec<PublicKey>>,
+    }
+    impl PacketProvider for FailingProvider {
+        type Error = io::Error;
+
+        fn get_packet(&self, key: &PublicKey) -> Result<Option<Arc<SignedPacket>>, io::Error> {
+            self.requests.borrow_mut().push(key.clone());
+            Err(io::Error::new(io::ErrorKind::TimedOut, "source timed out"))
+        }
+    }
+
+    let alice = key(1);
+    let provider = FailingProvider {
+        requests: Default::default(),
+    };
+    let source: &dyn PacketProvider<Error = io::Error> = &provider;
+    let error = resolve(&request(&alice), source).unwrap_err();
+    let Error::Provider { key, source } = error else {
+        panic!("expected provider error");
+    };
+    assert_eq!(*key, alice.public_key());
+    assert_eq!(provider.requests.into_inner(), vec![alice.public_key()]);
+    assert_eq!(
+        source.downcast_ref::<io::Error>().unwrap().kind(),
+        io::ErrorKind::TimedOut
+    );
+}
+
+#[test]
+fn async_lookup_can_suspend_then_return_the_same_routes_as_sync_lookup() {
+    let alice = key(1);
+    let proofs = delegated(&alice, &key(2));
+    let cache = packet_cache(proofs.clone());
+    let provider = TestProvider::new(&proofs);
+    let req = request(&alice);
+    let sync_result = resolve(&req, &cache).unwrap();
+
+    let mut future = Box::pin(resolve_async(&req, &provider));
+    assert!(block_on(poll_once(future.as_mut())).is_none());
+    let async_result = block_on(future).unwrap();
+
+    assert_eq!(async_result.service, sync_result.service);
+    assert_eq!(async_result.url_port, sync_result.url_port);
+    assert_eq!(async_result.candidates, sync_result.candidates);
+}
+
+#[test]
 fn time_waiting_for_the_provider_counts_against_record_ttl() {
     use std::{convert::Infallible, future::poll_fn, task::Poll};
 
@@ -196,7 +251,7 @@ fn time_waiting_for_the_provider_counts_against_record_ttl() {
         packet: Arc<SignedPacket>,
         ready: AtomicBool,
     }
-    impl PacketProvider for DelayedProvider {
+    impl AsyncPacketProvider for DelayedProvider {
         type Error = Infallible;
         async fn get_packet(&self, _: &PublicKey) -> Result<Option<Arc<SignedPacket>>, Infallible> {
             poll_fn(|_| {
@@ -225,7 +280,7 @@ fn time_waiting_for_the_provider_counts_against_record_ttl() {
         ready: AtomicBool::new(false),
     };
     let req = request(&alice);
-    let mut future = Box::pin(resolve(&req, &source));
+    let mut future = Box::pin(resolve_async(&req, &source));
     assert!(block_on(poll_once(future.as_mut())).is_none());
     std::thread::sleep(Duration::from_millis(1100));
     source.ready.store(true, Ordering::SeqCst);
@@ -238,7 +293,7 @@ fn dropping_resolution_drops_pending_lookup_without_further_queries() {
     let mut source = TestProvider::new(&[]);
     source.replies.insert(alice.public_key(), Reply::Pending);
     let req = request(&alice);
-    let mut future = Box::pin(resolve(&req, &source));
+    let mut future = Box::pin(resolve_async(&req, &source));
     fn requires_send<T: Send>(_: &T) {}
     requires_send(&future);
     assert!(block_on(poll_once(future.as_mut())).is_none());
@@ -254,15 +309,11 @@ fn cache_clones_and_bundle_lookups_share_the_decoded_packet() {
     let alice = key(1);
     let proofs = delegated(&alice, &key(2));
     let bundle = packet_cache(proofs.clone());
-    let first = block_on(bundle.get_packet(&alice.public_key()))
-        .unwrap()
-        .unwrap();
-    let second = block_on(bundle.get_packet(&alice.public_key()))
-        .unwrap()
-        .unwrap();
-    assert!(std::ptr::eq(first.as_ref(), second.as_ref()));
+    let first = bundle.get_packet(&alice.public_key()).unwrap().unwrap();
+    let second = bundle.get_packet(&alice.public_key()).unwrap().unwrap();
+    assert!(Arc::ptr_eq(&first, &second));
     let cloned = first.clone();
-    assert!(std::ptr::eq(first.as_ref(), cloned.as_ref()));
+    assert!(Arc::ptr_eq(&first, &cloned));
     assert_eq!(first.last_seen(), cloned.last_seen());
 }
 
@@ -272,22 +323,17 @@ fn local_cache_miss_can_be_filled_from_a_server_bundle_before_retrying() {
     let provider = key(2);
     let proofs = delegated(&alice, &provider);
     let mut cache = HashMap::new();
-    assert!(matches!(block_on(resolve(&request(&alice), &cache)),
+    assert!(matches!(resolve(&request(&alice), &cache),
         Err(Error::MissingPacket(missing)) if *missing == alice.public_key()));
     // Represents the HTTP adapter obtaining a complete /v1/resolve response.
     let response = packet_cache(proofs.clone());
     for packet in response.values() {
         cache.insert(packet.public_key(), packet.clone());
     }
-    let result = block_on(resolve(&request(&alice), &cache)).unwrap();
+    let result = resolve(&request(&alice), &cache).unwrap();
     assert_eq!(result.candidates.len(), 2);
-    assert!(std::ptr::eq(
-        cache[&provider.public_key()].as_ref(),
-        block_on(response.get_packet(&provider.public_key()))
-            .unwrap()
-            .unwrap()
-            .as_ref()
-    ));
+    let key = provider.public_key();
+    assert!(Arc::ptr_eq(&cache[&key], &response[&key]));
 }
 
 #[test]
@@ -298,20 +344,20 @@ fn expired_cached_packets_are_rejected_and_can_be_replaced_from_server() {
     expired.set_last_seen(&(now() - Duration::from_secs(601)).into());
     let mut cache = HashMap::from([(alice.public_key(), Arc::new(expired))]);
     assert!(matches!(
-        block_on(resolve(&request(&alice), &cache)),
+        resolve(&request(&alice), &cache),
         Err(Error::ExpiredRecord)
     ));
     let response = packet_cache(proofs.clone());
     for packet in response.values() {
         cache.insert(packet.public_key(), packet.clone());
     }
-    assert!(block_on(resolve(&request(&alice), &cache)).is_ok());
+    assert!(resolve(&request(&alice), &cache).is_ok());
     // TTL expiry is also checked on an otherwise cryptographically valid cache hit.
     let mut expired = proofs[0].clone();
     expired.set_last_seen(&(now() - Duration::from_secs(301)).into());
     cache.insert(alice.public_key(), Arc::new(expired));
     assert!(matches!(
-        block_on(resolve(&request(&alice), &cache)),
+        resolve(&request(&alice), &cache),
         Err(Error::ExpiredRecord)
     ));
 }
@@ -346,7 +392,7 @@ fn unsupported_protocols_are_filtered_without_tls_lookups() {
         &alice,
     );
     let source = TestProvider::new(&[packet]);
-    let result = block_on(resolve(&request(&alice), &source)).unwrap();
+    let result = block_on(resolve_async(&request(&alice), &source)).unwrap();
     assert_eq!(source.requested(), vec![alice.public_key()]);
     let candidates = &result.candidates;
     assert_eq!(candidates.len(), 1);
